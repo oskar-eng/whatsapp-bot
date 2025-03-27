@@ -6,61 +6,68 @@ app = Flask(__name__)
 
 ULTRAMSG_INSTANCE_ID = "instance111839"
 ULTRAMSG_TOKEN = "r4wm825i3lqivpku"
-REDGPS_PROXY_URL = "https://redgps-proxy.onrender.com/activos"
+RECEIVER_PHONE = ""  # Esto lo asignaremos desde los mensajes entrantes
+
+REDGPS_API_URL = "https://api.service24gps.com/api/v1/getdata"
+REDGPS_APIKEY = "255dsd2342340893dsdsdS7c0118e72"
+REDGPS_TOKEN = "8JKsNtW/HT87wxaSZLIsfyEFURGYUg4BOoo6swqPm9XHCY7nKtP+34bzOO8pvK7Q"
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
     data = request.get_json()
 
-    if not data:
-        return {"status": "no data"}, 400
-
     try:
-        message = data.get("body", "").strip().lower()
-        sender = data.get("from")
+        message = data['body'].get('text', '').strip()
+        sender = data['from']
 
-        if message.startswith("bateria"):
-            parts = message.split()
-            if len(parts) == 2:
-                placa = parts[1].upper()
-                info = get_battery_info(placa)
-                send_message(sender, info)
+        if message.lower().startswith("bateria"):
+            partes = message.split()
+            if len(partes) == 2:
+                placa = partes[1]
+                bateria = obtener_bateria_por_placa(placa)
+                respuesta = f"La batería de la unidad {placa} es {bateria}%"
             else:
-                send_message(sender, "Formato incorrecto. Usa: bateria [placa]")
+                respuesta = "Formato incorrecto. Usa: bateria [placa]"
         else:
-            send_message(sender, "Hola, soy Lía 🤖. Escribe 'bateria [placa]' para conocer el estado de batería.")
+            respuesta = "Hola, soy Lía 🧠. Puedes consultarme con: bateria [placa]"
 
+        enviar_mensaje(sender, respuesta)
+        return "ok", 200
     except Exception as e:
-        print("Error:", str(e))
+        print("Error:", e)
+        return "error", 500
 
-    return {"status": "ok"}, 200
-
-def get_battery_info(placa):
-    try:
-        response = requests.get(REDGPS_PROXY_URL)
-        data = response.json()
-
-        for unidad in data:
-            if unidad.get("unidad") == placa:
-                return f"🔋 Batería: {unidad['bateria']}%\nIMEI: {unidad['imei']}\n📅 Último reporte: {unidad['ultimo_reporte']}"
-
-        return "Unidad no encontrada. Verifica la placa."
-    except Exception as e:
-        return f"Error al consultar datos: {str(e)}"
-
-def send_message(to, message):
-    url = f"https://api.ultramsg.com/{ULTRAMSG_INSTANCE_ID}/messages/chat"
+def obtener_bateria_por_placa(placa):
     payload = {
-        "token": ULTRAMSG_TOKEN,
-        "to": to,
-        "body": message
+        "apikey": REDGPS_APIKEY,
+        "token": REDGPS_TOKEN,
+        "UseUTCDate": "0",
+        "sensores": "1"
     }
     try:
-        requests.post(url, data=payload)
+        response = requests.post(REDGPS_API_URL, data=payload)
+        data = response.json()
+        for unidad in data["data"]:
+            if unidad.get("UnitId", "").lower() == placa.lower():
+                return unidad.get("BatteryGps", "Desconocido")
+        return "No encontrada"
     except Exception as e:
-        print("Error al enviar mensaje:", str(e))
+        print("Error en API RedGPS:", e)
+        return "Error"
 
-if __name__ == "__main__":
-    app.run(debug=True, port=10000)
+def enviar_mensaje(to, mensaje):
+    url = f"https://api.ultramsg.com/{ULTRAMSG_INSTANCE_ID}/messages/chat"
+    data = {
+        "token": ULTRAMSG_TOKEN,
+        "to": to,
+        "body": mensaje
+    }
+    try:
+        requests.post(url, data=data)
+    except Exception as e:
+        print("Error al enviar mensaje:", e)
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=10000)
 
 
