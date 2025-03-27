@@ -1,71 +1,78 @@
-# app.py
 from flask import Flask, request, jsonify
 import requests
 
 app = Flask(__name__)
 
-# Token e instancia de UltraMsg
-ULTRAMSG_INSTANCE_ID = "111839"  # remplaza si usas otra
-ULTRAMSG_TOKEN = "r4wm825i3lqivpku"
-
-# URL del bot de RedGPS que devuelve todos los activos
-REDGPS_API_URL = "https://redgps-proxy.onrender.com/activos"
+@app.route("/", methods=["GET"])
+def index():
+    return "Bot WhatsApp Lía está activo 🟢", 200
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
-    data = request.get_json()
-    print("Webhook recibido:", data)
-
-    if not data or "body" not in data or "from" not in data:
-        return jsonify({"error": "Invalid payload"}), 400
-
-    message = data["body"].strip().lower()
-    phone = data["from"].replace("@c.us", "")
-
-    if message.startswith("bateria"):
-        partes = message.split()
-        if len(partes) == 2:
-            placa = partes[1].upper()
-            return responder_bateria(phone, placa)
-        else:
-            return enviar_mensaje(phone, "Formato incorrecto. Usa: bateria [placa]")
-
-    elif message in ["hola", "lia", "buenas"]:
-        return enviar_mensaje(phone, "Hola, soy Lía 🤖. ¡¿Cómo puedo ayudarte?!")
-
-    return jsonify({"status": "ignorado"}), 200
-
-def responder_bateria(telefono, placa):
     try:
-        response = requests.get(REDGPS_API_URL)
-        unidades = response.json()
+        data = request.get_json()
 
-        for unidad in unidades:
+        if not data:
+            return jsonify({"error": "No JSON received"}), 400
+
+        message = data.get("body", "").strip().lower()
+        sender = data.get("from", "")
+
+        if not message or not sender:
+            return jsonify({"error": "Missing 'body' or 'from'"}), 400
+
+        if message.startswith("bateria"):
+            partes = message.split(" ")
+            if len(partes) == 2:
+                placa = partes[1].upper()
+                return procesar_bateria(sender, placa)
+            else:
+                enviar_mensaje(sender, "❌ Usa el formato correcto: bateria [placa]")
+        else:
+            enviar_mensaje(sender, "👋 Hola, soy Lía. Escribe *bateria [placa]* para consultar la batería GPS.")
+        
+        return jsonify({"status": "ok"}), 200
+
+    except Exception as e:
+        print("Error:", e)
+        return jsonify({"error": str(e)}), 500
+
+def procesar_bateria(numero, placa):
+    try:
+        # Aquí llamamos al API del proxy RedGPS
+        url = "https://redgps-proxy.onrender.com/activos"
+        headers = {"Content-Type": "application/json"}
+        response = requests.get(url, headers=headers)
+        data = response.json()
+
+        for unidad in data.get("data", []):
             if unidad.get("UnitPlate", "").upper() == placa:
-                bateria = unidad.get("BateriaGps", "N/A")
-                fecha = unidad.get("ReportDate", "Sin fecha")
-                mensaje = f"🔋 Batería GPS: {bateria}%\n📅 Último reporte: {fecha}"
-                return enviar_mensaje(telefono, mensaje)
+                mensaje = f"📍 *{unidad.get('UnitId')}*\n🔋 Batería: {unidad.get('BateriaGps')}\n🕒 Último reporte: {unidad.get('ReportDate')}"
+                enviar_mensaje(numero, mensaje)
+                return jsonify({"status": "enviado"}), 200
 
-        return enviar_mensaje(telefono, f"No encontré la placa {placa} en RedGPS")
+        enviar_mensaje(numero, f"🚫 No se encontró la placa {placa}.")
+        return jsonify({"status": "placa no encontrada"}), 200
 
     except Exception as e:
         print("Error al consultar RedGPS:", e)
-        return enviar_mensaje(telefono, "Error consultando RedGPS. Intenta nuevamente.")
+        enviar_mensaje(numero, "❌ Error al consultar la batería.")
+        return jsonify({"error": str(e)}), 500
 
-def enviar_mensaje(telefono, texto):
-    url = f"https://api.ultramsg.com/instance{ULTRAMSG_INSTANCE_ID}/messages/chat"
+def enviar_mensaje(numero, mensaje):
+    instancia_id = "111839"
+    token = "r4wm825i3lqivpku"
+    url = f"https://api.ultramsg.com/instance{instancia_id}/messages/chat"
     payload = {
-        "token": ULTRAMSG_TOKEN,
-        "to": telefono,
-        "body": texto
+        "token": token,
+        "to": numero,
+        "body": mensaje
     }
-    r = requests.post(url, data=payload)
-    print("Respuesta de UltraMsg:", r.text)
-    return jsonify({"status": "ok"}), 200
+    requests.post(url, data=payload)
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
+    app.run(debug=True, port=10000, host="0.0.0.0")
+
 
 
 
