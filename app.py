@@ -4,62 +4,51 @@ import os
 
 app = Flask(__name__)
 
-# Configuraciones
-ULTRAMSG_TOKEN = "r4wm825i3lqivpku"
+# Variables de entorno o directamente en el código (reemplazar por los reales)
 ULTRAMSG_INSTANCE_ID = "instance111839"
-ULTRAMSG_URL = f"https://api.ultramsg.com/{ULTRAMSG_INSTANCE_ID}/messages/chat"
-
-REDGPS_API_URL = "https://redgps-proxy.onrender.com/activos"  # Proxy que genera token cada 6h
-
-
-def consultar_bateria(placa):
-    try:
-        response = requests.get(REDGPS_API_URL)
-        response.raise_for_status()
-        unidades = response.json()
-
-        for u in unidades:
-            if u.get("name") == placa:
-                return f"🔋 Batería de la unidad {placa}: {u.get('batteryLevel', 'N/A')}% (Reporte: {u.get('lastUpdate', 'N/A')})"
-        return f"⚠️ No se encontró información para la unidad {placa}."
-
-    except Exception as e:
-        return f"❌ Error al consultar RedGPS: {e}"
-
-
-def enviar_mensaje(numero, mensaje):
-    payload = {
-        "token": ULTRAMSG_TOKEN,
-        "to": numero,
-        "body": mensaje
-    }
-    requests.post(ULTRAMSG_URL, data=payload)
-
+ULTRAMSG_TOKEN = "r4wm825i3lqivpku"
+REDGPS_PROXY_URL = "https://redgps-proxy.onrender.com/activos"
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
-    data = request.get_json()
-    mensaje = data.get("body", "").strip()
-    numero = data.get("from")
+    data = request.json
+    mensaje = data.get("body", "").strip().lower()
+    telefono = data.get("from")
 
-    print("Mensaje recibido:", mensaje)
-
-    if mensaje.lower().startswith("bateria"):
+    if mensaje.startswith("bateria"):
         partes = mensaje.split()
-        if len(partes) >= 2:
-            placa = partes[1].strip()
-            respuesta = consultar_bateria(placa)
+        if len(partes) == 2:
+            placa = partes[1].upper()
+            activos = requests.get(REDGPS_PROXY_URL).json()
+
+            for u in activos:
+                if u.get("name", "").upper() == placa:
+                    bateria = u.get("batteryLevel")
+                    ultimo = u.get("lastUpdate")
+                    respuesta = f"La unidad {placa} tiene {bateria}% de batería.\nÚltimo reporte: {ultimo}"
+                    enviar_mensaje(telefono, respuesta)
+                    break
+            else:
+                enviar_mensaje(telefono, f"No se encontró información para la unidad {placa}.")
         else:
-            respuesta = "Por favor indica la placa. Ej: bateria CE-214700"
+            enviar_mensaje(telefono, "Formato incorrecto. Usa: bateria [placa]")
     else:
-        respuesta = "Hola, soy Lía 🤖. Puedes preguntarme por la batería usando: bateria [PLACA]"
+        enviar_mensaje(telefono, "Hola, soy Lía 🧙‍♀️. Escribe: bateria [placa] para consultar el estado de batería.")
 
-    enviar_mensaje(numero, respuesta)
-    return "ok"
+    return {"success": True}, 200
 
+def enviar_mensaje(telefono, mensaje):
+    url = f"https://api.ultramsg.com/{ULTRAMSG_INSTANCE_ID}/messages/chat"
+    payload = {
+        "token": ULTRAMSG_TOKEN,
+        "to": telefono,
+        "body": mensaje
+    }
+    requests.post(url, data=payload)
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+
 
 
 
