@@ -1,32 +1,35 @@
-from flask import Flask, request
+from flask import Flask, request, jsonify
 import requests
 
 app = Flask(__name__)
 
+# Configura aquí tu token y ID de instancia
+INSTANCE_ID = "instance111839"
+TOKEN = "r4wm825i3lqivpku"
+API_URL = f"https://api.ultramsg.com/{INSTANCE_ID}/messages/chat"
+
 @app.route("/webhook", methods=["POST"])
 def webhook():
-    data = request.get_json()
-    print("📥 Webhook recibido:", data)
+    data = request.json
+    if not data:
+        return jsonify({"error": "No data"}), 400
 
-    if data and "body" in data and "text" in data["body"]:
-        mensaje = data["body"]["text"].strip().lower()
-        numero = data["body"]["from"]
+    message = data.get("body", "").strip().lower()
+    sender = data.get("from", "")
 
-        if "hola" in mensaje:
-            enviar_respuesta(numero, "Hola, ¿en qué puedo ayudarte?")
+    # Solo responde si el mensaje es exactamente "hola"
+    if message == "hola":
+        payload = {
+            "token": TOKEN,
+            "to": sender,
+            "body": "Hola 👋, ¿cómo estás? Soy tu asistente de RedGPS."
+        }
+        headers = {
+            "Content-Type": "application/x-www-form-urlencoded"
+        }
+        requests.post(API_URL, data=payload, headers=headers)
 
-    return "OK", 200
-
-def enviar_respuesta(numero, mensaje):
-    url = "https://api.ultramsg.com/instance111839/messages/chat"
-    payload = {
-        "token": "r4wm825i3lqivpku",
-        "to": numero,
-        "body": mensaje
-    }
-    headers = {"Content-Type": "application/x-www-form-urlencoded"}
-    response = requests.post(url, data=payload, headers=headers)
-    print("📤 Respuesta enviada:", response.text)
+    return jsonify({"status": "ok"}), 200
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
