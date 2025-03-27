@@ -1,78 +1,57 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request
 import requests
-import os
 
 app = Flask(__name__)
-
-# Configura tu token y API URL de UltraMsg aquí
-ULTRAMSG_INSTANCE_ID = "instance111839"  # reemplaza con tu instancia
-ULTRAMSG_TOKEN = "r4wm825i3qlivpku"  # reemplaza con tu token
-ULTRAMSG_URL = f"https://api.ultramsg.com/{ULTRAMSG_INSTANCE_ID}/messages/chat"
-
-# Configura tu endpoint del proxy RedGPS (donde se genera el token dinámico)
-REDGPS_PROXY = "https://redgps-proxy.onrender.com/activos"
-
-@app.route("/", methods=["GET"])
-def index():
-    return "🟢 Bot de WhatsApp activo!"
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
     data = request.get_json()
-    print("📩 Mensaje recibido:", data)
 
     if not data:
         return "No data", 400
 
-    message = data.get("body", "").strip().lower()
-    sender = data.get("from")
+    try:
+        message = data.get("data", [])[0]
+        message_text = message.get("body", "").lower()
+        sender = message.get("from")
 
-    if not message or not sender:
-        return "Missing data", 400
+        if not sender or not message_text:
+            return "Invalid message", 400
 
-    response_text = ""
+        # Procesar palabra clave
+        if "bateria" in message_text:
+            placa = message_text.replace("bateria", "").strip().upper()
+            try:
+                response = requests.get("https://redgps-proxy.onrender.com/activos")
+                if response.status_code != 200:
+                    raise Exception("Error en proxy RedGPS")
 
-    if message == "hola":
-        response_text = "Hola, soy Lía 🤖. ¿Cómo puedo ayudarte?"
+                unidades = response.json()
+                unidad = next((u for u in unidades if u.get("UnitPlate") == placa), None)
 
-    elif message.startswith("bateria"):
-        partes = message.split(" ")
-        if len(partes) >= 2:
-            placa = partes[1].upper()
-            response_text = obtener_bateria(placa)
+                if unidad:
+                    bateria = unidad.get("BateriaGps", "N/A")
+                    fecha = unidad.get("ReportDate", "N/A")
+                    mensaje = f"🔋 Batería de {placa}: {bateria}%\nÚltimo reporte: {fecha}"
+                else:
+                    mensaje = f"No encontré información para la placa {placa}."
+
+            except Exception as e:
+                mensaje = f"Error al consultar datos de RedGPS. Intenta nuevamente."
         else:
-            response_text = "Por favor envía: bateria [placa]"
+            mensaje = "Hola, soy Lía 🤖. Para consultar la batería de una unidad, escribe: *bateria [placa]*."
 
-    if response_text:
-        enviar_whatsapp(sender, response_text)
+        # Enviar respuesta al mismo número
+        requests.post("https://api.ultramsg.com/instance111839/messages/chat", data={
+            "token": "r4wm8253iqivpbku",
+            "to": sender,
+            "body": mensaje
+        })
 
-    return jsonify({"status": "ok"})
+        return "OK", 200
 
-def obtener_bateria(placa):
-    try:
-        res = requests.get(REDGPS_PROXY)
-        unidades = res.json()
-        for u in unidades:
-            if u.get("UnitPlate", "").upper() == placa:
-                bateria = u.get("BateriaGps", "?")
-                fecha = u.get("ReportDate", "sin fecha")
-                return f"🔋 Batería: {bateria}%\n⏰ Último reporte: {fecha}"
-        return f"❌ No encontré información para la placa {placa}"
     except Exception as e:
-        print("Error al consultar el proxy RedGPS:", e)
-        return "Error al obtener la información de RedGPS."
-
-def enviar_whatsapp(to_number, text):
-    payload = {
-        "token": ULTRAMSG_TOKEN,
-        "to": to_number,
-        "body": text
-    }
-    try:
-        res = requests.post(ULTRAMSG_URL, data=payload)
-        print("✉️ Mensaje enviado:", res.text)
-    except Exception as e:
-        print("Error al enviar mensaje:", e)
+        return f"Error interno: {str(e)}", 500
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
