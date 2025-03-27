@@ -1,71 +1,74 @@
-# app.py
 from flask import Flask, request
 import requests
+import os
 
 app = Flask(__name__)
 
-# Configuración de UltraMsg
-ULTRAMSG_INSTANCE_ID = "instance111839"
+# Configuraciones
 ULTRAMSG_TOKEN = "r4wm825i3lqivpku"
-
-# URL de RedGPS-Proxy (ya gestiona el token)
+ULTRAMSG_INSTANCE = "instance111839"
 REDGPS_PROXY_URL = "https://redgps-proxy.onrender.com/activos"
 
+# Ruta para el webhook de UltraMsg
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    data = request.get_json()
 
-def obtener_dato_bateria(placa):
+    if not data:
+        return "No JSON", 400
+
     try:
-        response = requests.get(REDGPS_PROXY_URL)
-        data = response.json()
+        mensaje = data['body'].strip().lower()
+        telefono = data['from']
 
-        for unidad in data:
-            if unidad.get("unidad", "").lower() == placa.lower():
-                return unidad.get("bateria")
+        if mensaje.startswith("bateria"):
+            partes = mensaje.split()
+            if len(partes) >= 2:
+                placa = partes[1].upper()
+                return consultar_y_responder_bateria(telefono, placa)
 
-        return None
+        enviar_respuesta(telefono, "😊 Hola, soy Lía. Puedes escribirme `bateria [placa]` para consultar el nivel de batería.")
+
     except Exception as e:
-        print("Error al consultar RedGPS:", e)
-        return None
+        print("Error en webhook:", e)
+    
+    return "OK", 200
 
 
-def enviar_mensaje(numero, mensaje):
-    url = f"https://api.ultramsg.com/{ULTRAMSG_INSTANCE_ID}/messages/chat"
+def consultar_y_responder_bateria(telefono, placa):
+    try:
+        respuesta = requests.get(f"{REDGPS_PROXY_URL}?placa={placa}")
+        if respuesta.status_code == 200:
+            datos = respuesta.json()
+            bateria = datos.get("bateria", "desconocida")
+            ultima = datos.get("ultimoReporte", "-")
+            mensaje = f"⚡ Batería de {placa}: {bateria}%\n⏰ Último reporte: {ultima}"
+        else:
+            mensaje = f"No encontré datos para la placa {placa}."
+    except Exception as e:
+        print("Error al consultar RedGPS Proxy:", e)
+        mensaje = "Lo siento, hubo un error al consultar la batería."
+
+    enviar_respuesta(telefono, mensaje)
+    return "OK", 200
+
+
+def enviar_respuesta(telefono, mensaje):
+    url = f"https://api.ultramsg.com/{ULTRAMSG_INSTANCE}/messages/chat"
     payload = {
         "token": ULTRAMSG_TOKEN,
-        "to": numero,
+        "to": telefono,
         "body": mensaje
     }
     try:
-        requests.post(url, data=payload)
+        r = requests.post(url, data=payload)
+        print("Respuesta enviada:", r.status_code)
     except Exception as e:
-        print("Error al enviar mensaje:", e)
+        print("Error al enviar respuesta:", e)
 
 
-@app.route("/webhook", methods=["POST"])
-def webhook():
-    data = request.json
-
-    mensaje = data.get("body", "").strip().lower()
-    numero = data.get("from", "")
-
-    if mensaje.startswith("bateria"):
-        partes = mensaje.split()
-        if len(partes) >= 2:
-            placa = " ".join(partes[1:]).strip()
-            bateria = obtener_dato_bateria(placa)
-
-            if bateria is not None:
-                enviar_mensaje(numero, f"La unidad {placa} tiene {bateria}% de batería")
-            else:
-                enviar_mensaje(numero, f"No se encontró información para la unidad {placa}")
-        else:
-            enviar_mensaje(numero, "Envía: bateria [placa de unidad]")
-    else:
-        enviar_mensaje(numero, "Hola, soy Lía 🧙‍♀️. Puedes consultar la batería así: bateria [placa]")
-
-    return "ok"
-
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
+if __name__ == '__main__':
+    port = int(os.environ.get("PORT", 10000))
+    app.run(debug=True, host='0.0.0.0', port=port)
 
 
