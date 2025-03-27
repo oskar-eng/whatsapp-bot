@@ -1,74 +1,71 @@
-from flask import Flask, request
+# app.py
+from flask import Flask, request, jsonify
 import requests
-import json
 
 app = Flask(__name__)
 
-ULTRAMSG_API_URL = "https://api.ultramsg.com/instance111839/messages/chat"
+# Token e instancia de UltraMsg
+ULTRAMSG_INSTANCE_ID = "111839"  # remplaza si usas otra
 ULTRAMSG_TOKEN = "r4wm825i3lqivpku"
 
+# URL del bot de RedGPS que devuelve todos los activos
 REDGPS_API_URL = "https://redgps-proxy.onrender.com/activos"
-
-
-def get_redgps_data(plate):
-    try:
-        response = requests.get(REDGPS_API_URL)
-        data = response.json()
-
-        for unit in data:
-            if unit.get("UnitPlate", "").lower() == plate.lower():
-                return {
-                    "placa": unit.get("UnitPlate"),
-                    "bateria_gps": unit.get("BateriaGps"),
-                    "ultimo_reporte": unit.get("ReportDate"),
-                }
-    except Exception as e:
-        print("Error al obtener datos de RedGPS:", e)
-    return None
-
-
-def send_whatsapp_message(to, message):
-    payload = {
-        "token": ULTRAMSG_TOKEN,
-        "to": to,
-        "body": message
-    }
-    headers = {"Content-Type": "application/x-www-form-urlencoded"}
-    requests.post(ULTRAMSG_API_URL, data=payload, headers=headers)
-
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
-    data = request.json
-    if not data:
-        return "No data", 400
+    data = request.get_json()
+    print("Webhook recibido:", data)
 
-    mensaje = data.get("body", "").strip()
-    numero = data.get("from")
+    if not data or "body" not in data or "from" not in data:
+        return jsonify({"error": "Invalid payload"}), 400
 
-    if mensaje.lower().startswith("bateria"):
-        partes = mensaje.split()
-        if len(partes) > 1:
-            placa = partes[1]
-            info = get_redgps_data(placa)
+    message = data["body"].strip().lower()
+    phone = data["from"].replace("@c.us", "")
 
-            if info:
-                texto = f"🚗 Unidad: {info['placa']}\n🔋 Batería GPS: {info['bateria_gps']}%\n📅 Último reporte: {info['ultimo_reporte']}"
-            else:
-                texto = "No se encontró información para esa placa."
+    if message.startswith("bateria"):
+        partes = message.split()
+        if len(partes) == 2:
+            placa = partes[1].upper()
+            return responder_bateria(phone, placa)
         else:
-            texto = "Por favor, indica la placa. Ejemplo: bateria ABC123"
-        send_whatsapp_message(numero, texto)
+            return enviar_mensaje(phone, "Formato incorrecto. Usa: bateria [placa]")
 
-    elif mensaje.lower() in ["hola", "buenas", "lia"]:
-        send_whatsapp_message(numero, "Hola, soy Lía 🧙‍♂️. Puedes consultarme la batería de una unidad escribiendo: bateria [placa]")
+    elif message in ["hola", "lia", "buenas"]:
+        return enviar_mensaje(phone, "Hola, soy Lía 🤖. ¡¿Cómo puedo ayudarte?!")
 
-    return "ok", 200
+    return jsonify({"status": "ignorado"}), 200
 
+def responder_bateria(telefono, placa):
+    try:
+        response = requests.get(REDGPS_API_URL)
+        unidades = response.json()
+
+        for unidad in unidades:
+            if unidad.get("UnitPlate", "").upper() == placa:
+                bateria = unidad.get("BateriaGps", "N/A")
+                fecha = unidad.get("ReportDate", "Sin fecha")
+                mensaje = f"🔋 Batería GPS: {bateria}%\n📅 Último reporte: {fecha}"
+                return enviar_mensaje(telefono, mensaje)
+
+        return enviar_mensaje(telefono, f"No encontré la placa {placa} en RedGPS")
+
+    except Exception as e:
+        print("Error al consultar RedGPS:", e)
+        return enviar_mensaje(telefono, "Error consultando RedGPS. Intenta nuevamente.")
+
+def enviar_mensaje(telefono, texto):
+    url = f"https://api.ultramsg.com/instance{ULTRAMSG_INSTANCE_ID}/messages/chat"
+    payload = {
+        "token": ULTRAMSG_TOKEN,
+        "to": telefono,
+        "body": texto
+    }
+    r = requests.post(url, data=payload)
+    print("Respuesta de UltraMsg:", r.text)
+    return jsonify({"status": "ok"}), 200
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
-
 
 
 
