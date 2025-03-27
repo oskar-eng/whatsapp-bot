@@ -1,4 +1,5 @@
 from flask import Flask, request
+import requests
 
 app = Flask(__name__)
 
@@ -13,11 +14,9 @@ def webhook():
 
         if "hola" in mensaje:
             enviar_respuesta(numero, "Hola, ¿en qué puedo ayudarte?")
-    
+
     return "OK", 200
 
-# Función para enviar respuesta usando UltraMsg
-import requests
 def enviar_respuesta(numero, mensaje):
     url = "https://api.ultramsg.com/instance111839/messages/chat"
     payload = {
