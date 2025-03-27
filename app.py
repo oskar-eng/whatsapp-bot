@@ -4,9 +4,8 @@ import os
 
 app = Flask(__name__)
 
-# URL de tu hoja de cálculo publicada como CSV desde Google Sheets
-SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSF2EssaBoWeEnfowYUJcBv3GXKIWWjOHbwQT7NhehHg2lF0IEgFXrFNbrgwFVr4C5NunL85Vfe9AOs/pub?gid=0&single=true&output=csv"  # <-- Reemplazar con tu URL publicada como CSV
-
+# URL publicada como CSV desde Google Sheets
+SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSF2EssaBoWeEnfowYUJcBv3GXKIWWjOHbwQT7NhehHg2lF0IEgFXrFNbrgwFVr4C5NunL85Vfe9AOs/pub?gid=0&single=true&output=csv"  # <-- Reemplazar con tu URL
 
 def obtener_datos_placa(placa):
     try:
@@ -27,7 +26,6 @@ def obtener_datos_placa(placa):
     except Exception as e:
         print("Error al leer la hoja:", e)
         return None
-
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
@@ -54,20 +52,17 @@ def webhook():
     else:
         texto = "Hola, soy Lía 🤖. Puedes consultarme escribiendo: bateria [placa]"
 
-    # Responder usando UltraMsg
-    instancia_id = os.getenv("instance111839")
-    token = os.getenv("r4wm825i3lqivpku")
-
+    # Enviar respuesta a UltraMsg
     payload = {
-        "token": token,
+        "token": os.environ.get("r4wm825i3lqivpku"),
         "to": numero,
         "body": texto
     }
-    requests.post(f"https://api.ultramsg.com/{instancia_id}/messages/chat", data=payload)
+    instance_id = os.environ.get("instance111839")
+    requests.post(f"https://api.ultramsg.com/{instance_id}/messages/chat", data=payload)
 
     return "OK"
 
-
 if __name__ == '__main__':
-    app.run(debug=True, port=10000)
+    app.run(host='0.0.0.0', port=10000, debug=True)
 
