@@ -1,37 +1,66 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request
 import requests
+import os
 
 app = Flask(__name__)
+
+ULTRAMSG_INSTANCE_ID = "instance111839"
+ULTRAMSG_TOKEN = "r4wm825i3lqivpku"
+REDGPS_PROXY_URL = "https://redgps-proxy.onrender.com/activos"
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
     data = request.get_json()
-    print("Mensaje recibido:", data)  # Para debug en logs de Render
+
+    if not data:
+        return {"status": "no data"}, 400
 
     try:
-        mensaje = data["data"]["body"].strip().lower()
-        telefono = data["data"]["from"]
+        message = data.get("body", "").strip().lower()
+        sender = data.get("from")
 
-        if "hola" in mensaje:
-            enviar_mensaje(telefono, "Hola, soy Lía 🤖. ¿Cómo puedo ayudarte?")
+        if message.startswith("bateria"):
+            parts = message.split()
+            if len(parts) == 2:
+                placa = parts[1].upper()
+                info = get_battery_info(placa)
+                send_message(sender, info)
+            else:
+                send_message(sender, "Formato incorrecto. Usa: bateria [placa]")
+        else:
+            send_message(sender, "Hola, soy Lía 🤖. Escribe 'bateria [placa]' para conocer el estado de batería.")
 
     except Exception as e:
-        print("Error procesando mensaje:", str(e))
+        print("Error:", str(e))
 
-    return jsonify({"status": "ok"})
+    return {"status": "ok"}, 200
 
+def get_battery_info(placa):
+    try:
+        response = requests.get(REDGPS_PROXY_URL)
+        data = response.json()
 
-def enviar_mensaje(telefono, mensaje):
-    url = "https://api.ultramsg.com/instance111839/messages/chat"
+        for unidad in data:
+            if unidad.get("unidad") == placa:
+                return f"🔋 Batería: {unidad['bateria']}%\nIMEI: {unidad['imei']}\n📅 Último reporte: {unidad['ultimo_reporte']}"
+
+        return "Unidad no encontrada. Verifica la placa."
+    except Exception as e:
+        return f"Error al consultar datos: {str(e)}"
+
+def send_message(to, message):
+    url = f"https://api.ultramsg.com/{ULTRAMSG_INSTANCE_ID}/messages/chat"
     payload = {
-        "token": "r4wm825i3lqivpku",
-        "to": telefono,
-        "body": mensaje
+        "token": ULTRAMSG_TOKEN,
+        "to": to,
+        "body": message
     }
-    response = requests.post(url, data=payload)
-    print("Respuesta del envío:", response.text)
-
+    try:
+        requests.post(url, data=payload)
+    except Exception as e:
+        print("Error al enviar mensaje:", str(e))
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
+    app.run(debug=True, port=10000)
+
 
