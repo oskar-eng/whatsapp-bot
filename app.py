@@ -1,33 +1,37 @@
 from flask import Flask, request, jsonify
+import requests
 
 app = Flask(__name__)
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
     data = request.get_json()
-    print("Mensaje recibido:", data)
+    print("Mensaje recibido:", data)  # Para debug en logs de Render
 
-    if data and data.get("event_type") == "message_received":
-        message = data.get("body", "").lower()
-        sender = data.get("from", "")
+    try:
+        mensaje = data["data"]["body"].strip().lower()
+        telefono = data["data"]["from"]
 
-        if "hola" in message:
-            # Aqui llamamos a UltraMsg para responder (puedes cambiar el mensaje)
-            import requests
-            instance_id = "instance111839"  # <-- Tu ID
-            token = "r4wm825i3lqivpku"        # <-- Tu token
-            url = f"https://api.ultramsg.com/{instance_id}/messages/chat"
+        if "hola" in mensaje:
+            enviar_mensaje(telefono, "Hola, soy Lía 🤖. ¿Cómo puedo ayudarte?")
 
-            payload = {
-                "token": token,
-                "to": sender,
-                "body": "Hola, soy Lía y estoy conectada :)"
-            }
-
-            response = requests.post(url, data=payload)
-            print("Respuesta de UltraMsg:", response.text)
+    except Exception as e:
+        print("Error procesando mensaje:", str(e))
 
     return jsonify({"status": "ok"})
 
+
+def enviar_mensaje(telefono, mensaje):
+    url = "https://api.ultramsg.com/instance111839/messages/chat"
+    payload = {
+        "token": "r4wm825i3lqivpku",
+        "to": telefono,
+        "body": mensaje
+    }
+    response = requests.post(url, data=payload)
+    print("Respuesta del envío:", response.text)
+
+
 if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=10000)
+    app.run(host="0.0.0.0", port=10000)
+
