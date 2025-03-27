@@ -1,53 +1,73 @@
 from flask import Flask, request
 import requests
-import os
+import json
 
 app = Flask(__name__)
 
-# Variables de entorno o directamente en el código (reemplazar por los reales)
-ULTRAMSG_INSTANCE_ID = "instance111839"
+ULTRAMSG_API_URL = "https://api.ultramsg.com/instance111839/messages/chat"
 ULTRAMSG_TOKEN = "r4wm825i3lqivpku"
-REDGPS_PROXY_URL = "https://redgps-proxy.onrender.com/activos"
+
+REDGPS_API_URL = "https://redgps-proxy.onrender.com/activos"
+
+
+def get_redgps_data(plate):
+    try:
+        response = requests.get(REDGPS_API_URL)
+        data = response.json()
+
+        for unit in data:
+            if unit.get("UnitPlate", "").lower() == plate.lower():
+                return {
+                    "placa": unit.get("UnitPlate"),
+                    "bateria_gps": unit.get("BateriaGps"),
+                    "ultimo_reporte": unit.get("ReportDate"),
+                }
+    except Exception as e:
+        print("Error al obtener datos de RedGPS:", e)
+    return None
+
+
+def send_whatsapp_message(to, message):
+    payload = {
+        "token": ULTRAMSG_TOKEN,
+        "to": to,
+        "body": message
+    }
+    headers = {"Content-Type": "application/x-www-form-urlencoded"}
+    requests.post(ULTRAMSG_API_URL, data=payload, headers=headers)
+
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
     data = request.json
-    mensaje = data.get("body", "").strip().lower()
-    telefono = data.get("from")
+    if not data:
+        return "No data", 400
 
-    if mensaje.startswith("bateria"):
+    mensaje = data.get("body", "").strip()
+    numero = data.get("from")
+
+    if mensaje.lower().startswith("bateria"):
         partes = mensaje.split()
-        if len(partes) == 2:
-            placa = partes[1].upper()
-            activos = requests.get(REDGPS_PROXY_URL).json()
+        if len(partes) > 1:
+            placa = partes[1]
+            info = get_redgps_data(placa)
 
-            for u in activos:
-                if u.get("name", "").upper() == placa:
-                    bateria = u.get("batteryLevel")
-                    ultimo = u.get("lastUpdate")
-                    respuesta = f"La unidad {placa} tiene {bateria}% de batería.\nÚltimo reporte: {ultimo}"
-                    enviar_mensaje(telefono, respuesta)
-                    break
+            if info:
+                texto = f"🚗 Unidad: {info['placa']}\n🔋 Batería GPS: {info['bateria_gps']}%\n📅 Último reporte: {info['ultimo_reporte']}"
             else:
-                enviar_mensaje(telefono, f"No se encontró información para la unidad {placa}.")
+                texto = "No se encontró información para esa placa."
         else:
-            enviar_mensaje(telefono, "Formato incorrecto. Usa: bateria [placa]")
-    else:
-        enviar_mensaje(telefono, "Hola, soy Lía 🧙‍♀️. Escribe: bateria [placa] para consultar el estado de batería.")
+            texto = "Por favor, indica la placa. Ejemplo: bateria ABC123"
+        send_whatsapp_message(numero, texto)
 
-    return {"success": True}, 200
+    elif mensaje.lower() in ["hola", "buenas", "lia"]:
+        send_whatsapp_message(numero, "Hola, soy Lía 🧙‍♂️. Puedes consultarme la batería de una unidad escribiendo: bateria [placa]")
 
-def enviar_mensaje(telefono, mensaje):
-    url = f"https://api.ultramsg.com/{ULTRAMSG_INSTANCE_ID}/messages/chat"
-    payload = {
-        "token": ULTRAMSG_TOKEN,
-        "to": telefono,
-        "body": mensaje
-    }
-    requests.post(url, data=payload)
+    return "ok", 200
+
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+    app.run(host="0.0.0.0", port=10000)
 
 
 
