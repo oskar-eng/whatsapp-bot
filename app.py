@@ -51,11 +51,11 @@ def webhook():
 
     # Enviar respuesta vía UltraMsg
     payload = {
-        "token": os.getenv("ULTRA_TOKEN"),
+        "token": os.getenv("r4wm825i3lqivpku"),
         "to": numero,
         "body": texto
     }
-    instancia = os.getenv("ULTRA_INSTANCE")
+    instancia = os.getenv("instance111839")
     requests.post(f"https://api.ultramsg.com/{instancia}/messages/chat", data=payload)
 
     return "OK"
