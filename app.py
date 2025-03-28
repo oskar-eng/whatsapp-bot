@@ -6,25 +6,22 @@ from io import StringIO
 
 app = Flask(__name__)
 
-SHEET_CSV_URL = os.getenv("https://docs.google.com/spreadsheets/d/e/2PACX-1vSDN1EJPh4tLtxFxMbmK_s5eKZxvA8CcaPKVl5LFPSaaRuizjME_wgCefpn-JgZ0Z7ZDd1sAZ0SO27h/pub?gid=0&single=true&output=csv")  # <-- agrega esto en Render como variable de entorno
-ULTRA_INSTANCE = os.getenv("instance111839")
-ULTRA_TOKEN = os.getenv("o4ef8592pscczodm")
+# URL del CSV publicado desde Google Sheets (reemplázalo por el tuyo)
+SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQCIQ0FHfnImrxWmheLX9BEZ8Bm6GaK50DRSrhsTbH3BA9z0ggnnMfOOoTytO_fQTg5j2z7qyo3rds9/pub?gid=560326357&single=true&output=csv"
 
-
-def buscar_placa(placa_busqueda):
+def obtener_datos_placa(placa):
     try:
         response = requests.get(SHEET_CSV_URL)
-        content = StringIO(response.text)
-        reader = csv.DictReader(content)
+        response.encoding = 'utf-8'
+        data = csv.DictReader(StringIO(response.text))
 
-        for row in reader:
-            if row["placa"].strip().upper() == placa_busqueda.upper():
-                return row
+        for fila in data:
+            if fila['placa'].strip().upper() == placa.upper():
+                return fila
         return None
     except Exception as e:
-        print("Error al consultar Google Sheets:", e)
+        print(f"Error leyendo CSV: {e}")
         return None
-
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
@@ -32,33 +29,36 @@ def webhook():
     if not data or "message" not in data:
         return "OK"
 
-    mensaje = data["message"]["body"].strip()
+    mensaje = data["message"]["body"].strip().lower()
     numero = data["message"]["from"]
 
-    if mensaje.lower().startswith("bateria"):
+    if mensaje.startswith("bateria"):
         partes = mensaje.split()
         if len(partes) >= 2:
             placa = " ".join(partes[1:])
-            resultado = buscar_placa(placa)
-
-            if resultado:
-                texto = f"🔋 Batería del GPS de {resultado['placa']}: {resultado['bateria']}%\n📅 Último reporte: {resultado['fecha']}"
+            datos = obtener_datos_placa(placa)
+            if datos:
+                texto = f"🔋 Batería del GPS de {datos['placa']}: {datos['bateria']}%\n📅 Último reporte: {datos['fecha']}"
             else:
-                texto = f"🚫 No encontré información para la placa '{placa.upper()}'. Verifica si está bien escrita."
+                texto = f"🚫 No encontré información para la placa '{placa.upper()}'"
         else:
-            texto = "⚠️ Usa el formato: bateria [placa]. Ejemplo: bateria ABC-123"
+            texto = "❗Formato incorrecto. Escribe: bateria [placa]\nEjemplo: bateria CE-049040"
     else:
-        texto = "👋 Hola, soy Lía. Para consultar la batería de una unidad, escribe:\n👉 *bateria [placa]*\nEjemplo: bateria ABC-123"
+        texto = "🤖 Comando no reconocido. Escribe: bateria [placa]"
+
+    # Enviar respuesta usando UltraMsg
+    instancia_id = os.getenv("instance111839")
+    token = os.getenv("o4ef8592pscczodm")
 
     payload = {
-        "token": ULTRA_TOKEN,
+        "token": token,
         "to": numero,
         "body": texto
     }
-    requests.post(f"https://api.ultramsg.com/{ULTRA_INSTANCE}/messages/chat", data=payload)
+    requests.post(f"https://api.ultramsg.com/{instancia_id}/messages/chat", data=payload)
+
     return "OK"
 
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     app.run(debug=True, port=10000)
 
