@@ -50,8 +50,8 @@ def webhook():
         texto = "Hola, soy Lía 🤖. Puedes consultarme escribiendo: bateria [placa]"
 
     # Responder usando UltraMsg
-    instancia_id = os.getenv("ULTRA_INSTANCE")
-    token = os.getenv("ULTRA_TOKEN")
+    instancia_id = os.getenv("instance111839")
+    token = os.getenv("o4ef8592pscczodm")
 
     payload = {
         "token": token,
