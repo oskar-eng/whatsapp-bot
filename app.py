@@ -1,31 +1,33 @@
 from flask import Flask, request
-import requests
 import os
 import csv
-from io import StringIO
 
 app = Flask(__name__)
 
-# URL del CSV publicado desde Google Sheets (reemplázalo por el tuyo)
-SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQCIQ0FHfnImrxWmheLX9BEZ8Bm6GaK50DRSrhsTbH3BA9z0ggnnMfOOoTytO_fQTg5j2z7qyo3rds9/pub?gid=560326357&single=true&output=csv"
+# Ruta al archivo CSV local con los datos
+CSV_LOCAL_FILE = "datos.csv"
 
 def obtener_datos_placa(placa):
     try:
-        response = requests.get(SHEET_CSV_URL)
-        response.encoding = 'utf-8'
-        data = csv.DictReader(StringIO(response.text))
-
-        for fila in data:
-            if fila['placa'].strip().upper() == placa.upper():
-                return fila
+        with open(CSV_LOCAL_FILE, newline='', encoding='utf-8') as archivo:
+            lector = csv.DictReader(archivo)
+            for fila in lector:
+                if fila['placa'].strip().upper() == placa.upper():
+                    return {
+                        'placa': fila['placa'],
+                        'imei': fila['imei'],
+                        'bateria': fila['bateria'],
+                        'fecha': fila['fecha'],
+                    }
         return None
     except Exception as e:
-        print(f"Error leyendo CSV: {e}")
+        print("Error al leer el archivo CSV:", e)
         return None
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
     data = request.get_json()
+
     if not data or "message" not in data:
         return "OK"
 
@@ -36,19 +38,20 @@ def webhook():
         partes = mensaje.split()
         if len(partes) >= 2:
             placa = " ".join(partes[1:])
-            datos = obtener_datos_placa(placa)
-            if datos:
-                texto = f"🔋 Batería del GPS de {datos['placa']}: {datos['bateria']}%\n📅 Último reporte: {datos['fecha']}"
+            resultado = obtener_datos_placa(placa)
+
+            if resultado:
+                texto = f"🔋 Batería del GPS de {resultado['placa']}: {resultado['bateria']}%\n📅 Último reporte: {resultado['fecha']}"
             else:
                 texto = f"🚫 No encontré información para la placa '{placa.upper()}'"
         else:
-            texto = "❗Formato incorrecto. Escribe: bateria [placa]\nEjemplo: bateria CE-049040"
+            texto = "Por favor indica la placa: Ejemplo 'bateria CE-049040'"
     else:
-        texto = "🤖 Comando no reconocido. Escribe: bateria [placa]"
+        texto = "Hola, soy Lía 🤖. Puedes consultarme escribiendo: bateria [placa]"
 
-    # Enviar respuesta usando UltraMsg
-    instancia_id = os.getenv("instance111839")
-    token = os.getenv("o4ef8592pscczodm")
+    # Responder usando UltraMsg
+    instancia_id = os.getenv("ULTRA_INSTANCE")
+    token = os.getenv("ULTRA_TOKEN")
 
     payload = {
         "token": token,
